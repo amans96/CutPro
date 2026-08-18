@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Shop {
+  id                 String      @id @default(uuid())
+  ownerEmail         String      @unique
+  shopName           String
+  slug               String      @unique
+  subscriptionStatus String      @default("INACTIVE")
+  qrCodeUrl          String?
+  isOpen             Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  
+  barbers            Barber[]
+  queueItems         QueueItem[]
+}
+
+model Barber {
+  id        String      @id @default(uuid())
+  shopId    String
+  name      String
+  status    String      @default("AVAILABLE")
+  isActive  Boolean     @default(true)
+  
+  shop      Shop        @relation(fields: [shopId], references: [id])
+  queueItems QueueItem[]
+}
+
+model QueueItem {
+  id           String    @id @default(uuid())
+  shopId       String
+  barberId     String?
+  customerName String
+  status       String    @default("WAITING")
+  joinedAt     DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  shop         Shop      @relation(fields: [shopId], references: [id])
+  barber       Barber?   @relation(fields: [barberId], references: [id])
+}
