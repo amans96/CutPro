@@ -4,44 +4,371 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum UserRole {
+  SUPER_ADMIN
+  SHOP_OWNER
+}
+
+enum BusinessType {
+  BARBERSHOP
+  SALON
+  UNISEX
+  SPA
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum SubscriptionType {
+  Basic 
+  Plus 
+  Pro
+}
+
+enum StaffRole {
+  BARBER
+  HAIRSTYLIST
+  WASHER
+  NAIL_TECHNICIAN
+  RECEPTIONIST
+  MANAGER
+  MAKEUP_ARTIST
+}
+
+enum StaffStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_SERVICE
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  MOBILE_MONEY
+  OTHER
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
+
+// ==========================================
+// SAAS USERS (Dashboard Owners/Admins)
+// ==========================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   
+  name      String
+  phone     String?
+  role      UserRole @default(SHOP_OWNER)
+
+  shops     Shop[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// ==========================================
+// SHOP
+// ==========================================
 
 model Shop {
-  id                 String      @id @default(uuid())
-  ownerEmail         String      @unique
+  id                 String             @id @default(uuid())
+
+  ownerId            String
+  owner              User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
   shopName           String
-  slug               String      @unique
-  subscriptionStatus String      @default("INACTIVE")
+  slug               String             @unique
+
+  businessType       BusinessType
+  businessSubtype    String?
+
+  shopPhone          String?
+
+  address            String?
+  city               String?
+  country            String?
+
+  logoUrl            String?
   qrCodeUrl          String?
-  isOpen             Boolean     @default(false)
-  createdAt          DateTime    @default(now())
-  
-  barbers            Barber[]
+
+  subscriptionStatus SubscriptionStatus @default(INACTIVE)
+  subscriptionPlan   String?
+
+  isOpen             Boolean            @default(false)
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  staff              Staff[]
+  services           Service[]
+  customers          Customer[]
   queueItems         QueueItem[]
+  orders             Order[]
+  payments           Payment[]
+  shopQrCodes        ShopQrCode[]
+  products           Product[]
 }
 
-model Barber {
-  id        String      @id @default(uuid())
-  shopId    String
-  name      String
-  status    String      @default("AVAILABLE")
-  isActive  Boolean     @default(true)
-  
-  shop      Shop        @relation(fields: [shopId], references: [id])
-  queueItems QueueItem[]
+
+// ==========================================
+// STAFF
+// ==========================================
+
+model Staff {
+  id           String      @id @default(uuid())
+
+  shopId       String
+  name         String
+  email        String?
+  phone        String?
+
+  role         StaffRole
+  status       StaffStatus @default(OFFLINE)
+
+  profileImage String?
+  isActive     Boolean     @default(true)
+
+  shop         Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  queueItems   QueueItem[]
+  services     StaffService[]
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
+
+
+// ==========================================
+// SERVICES
+// ==========================================
+
+model Service {
+  id          String   @id @default(uuid())
+
+  shopId      String
+
+  name        String
+  description String?
+
+  price       Decimal  @db.Decimal(10, 2)
+  duration    Int      // duration in minutes
+
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  staff       StaffService[]
+  queueItems  QueueItem[]
+  orders      Order[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+// ==========================================
+// STAFF ↔ SERVICES
+// ==========================================
+
+model StaffService {
+  id        String  @id @default(uuid())
+
+  staffId   String
+  serviceId String
+
+  staff     Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, serviceId])
+}
+
+
+// ==========================================
+// CUSTOMERS (Barbershop Clients)
+// ==========================================
+
+model Customer {
+  id         String         @id @default(uuid())
+
+  shopId     String
+
+  name       String
+  phone      String?
+  email      String?
+
+  password   String?
+
+  status     CustomerStatus @default(ACTIVE)
+
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  shop       Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  queueItems QueueItem[]
+  orders     Order[]
+
+  @@index([shopId])
+  @@index([phone])
+  @@index([email])
+}
+
+
+// ==========================================
+// QUEUE
+// ==========================================
 
 model QueueItem {
-  id           String    @id @default(uuid())
-  shopId       String
-  barberId     String?
-  customerName String
-  status       String    @default("WAITING")
-  joinedAt     DateTime  @default(now())
-  startedAt    DateTime?
-  completedAt  DateTime?
+  id            String      @id @default(uuid())
 
-  shop         Shop      @relation(fields: [shopId], references: [id])
-  barber       Barber?   @relation(fields: [barberId], references: [id])
+  shopId        String
+  customerId    String?
+  staffId       String?
+  serviceId     String?
+
+  customerName  String
+  customerPhone String?
+
+  status        QueueStatus @default(WAITING)
+
+  queueNumber   Int
+
+  joinedAt      DateTime    @default(now())
+  calledAt      DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  estimatedWait Int?
+
+  shop          Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customer      Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  staff         Staff?      @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  service       Service?    @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  order         Order?
+
+  @@index([shopId, status])
+  @@index([staffId, status])
+}
+
+
+// ==========================================
+// ORDERS / SALES
+// ==========================================
+
+model Order {
+  id            String        @id @default(uuid())
+
+  shopId        String
+  customerId    String?
+  serviceId     String?
+  queueItemId   String?       @unique
+
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discount      Decimal       @default(0) @db.Decimal(10, 2)
+  total         Decimal       @db.Decimal(10, 2)
+
+  paymentStatus PaymentStatus @default(PENDING)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  shop          Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  service       Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  queueItem     QueueItem?    @relation(fields: [queueItemId], references: [id], onDelete: SetNull)
+
+  payment       Payment?
+}
+
+
+// ==========================================
+// PAYMENTS
+// ==========================================
+
+model Payment {
+  id          String        @id @default(uuid())
+
+  shopId      String
+  orderId     String        @unique
+
+  amount      Decimal       @db.Decimal(10, 2)
+
+  method      PaymentMethod
+  status      PaymentStatus @default(PENDING)
+
+  paidAt      DateTime?
+
+  shop        Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime      @default(now())
+}
+
+
+// ==========================================
+// QR CODES
+// ==========================================
+
+model ShopQrCode {
+  id          String   @id @default(uuid())
+
+  shopId      String
+
+  name        String
+  code        String   @unique
+
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+model Product {
+  id          String   @id @default(uuid())
+  
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  
+  name        String
+  description String?
+  price       Float?   // Selling price (optional, in case it's just internal supplies)
+  stock       Int      @default(0) // How many items are left on the shelf
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
